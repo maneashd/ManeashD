@@ -81,3 +81,51 @@ def generate_ddl(iceberg_schema, table_name):
 table_name = "my_manifest_table"
 ddl_statement = generate_ddl(iceberg_schema, table_name)
 print(ddl_statement)
+
+
+
+
+
+
+
+import json
+from avro.schema import parse, RecordSchema, ArraySchema
+import os
+
+# Input and output file paths
+input_file = "schema.avsc"  # Replace with your input Avro schema file path
+output_file = "schema_with_ids.avsc"  # Output file in the same repository
+
+# Function to recursively add field IDs and element IDs for arrays
+def add_field_ids(schema, id_counter=1):
+    if isinstance(schema, RecordSchema):
+        new_fields = []
+        for field in schema.fields:
+            field.props['field-id'] = id_counter  # Changed to field-id
+            id_counter += 1
+            if isinstance(field.type, RecordSchema):
+                field.type, id_counter = add_field_ids(field.type, id_counter)
+            elif isinstance(field.type, ArraySchema):
+                field.type.props['element-id'] = id_counter
+                id_counter += 1
+                if isinstance(field.type.items, RecordSchema):
+                    field.type.items, id_counter = add_field_ids(field.type.items, id_counter)
+            new_fields.append(field)
+        schema.fields = new_fields
+    return schema, id_counter
+
+# Read Avro schema from file
+with open(input_file, 'r') as f:
+    avro_schema_json = json.load(f)
+
+# Parse Avro schema
+avro_schema = parse(json.dumps(avro_schema_json))
+
+# Add field IDs and element IDs
+modified_avro_schema, _ = add_field_ids(avro_schema)
+
+# Write modified schema to output file
+with open(output_file, 'w') as f:
+    json.dump(json.loads(modified_avro_schema.to_json()), f, indent=2) # Use json.loads before dumping
+
+print(f"Modified schema written to {output_file}")
