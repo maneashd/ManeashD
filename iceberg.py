@@ -190,3 +190,72 @@ with open(output_file, 'w') as f:
     json.dump(json.loads(modified_avro_schema.to_json()), f, indent=2)
 
 print(f"Modified schema written to {output_file}")
+====================================================================
+
+
+
+
+import json
+from avro import schema
+from avro.schema import make_avsc_object, RecordSchema, ArraySchema, UnionSchema
+import copy
+
+# Input and output file paths
+input_file = "schema.json"
+output_file = "schema_with_ids.json"
+
+# Function to recursively add field IDs and element IDs for arrays
+def add_field_ids(avro_schema, id_counter=1):
+    if isinstance(avro_schema, RecordSchema):
+        new_fields = []
+        for field in avro_schema.fields:
+            new_field = copy.copy(field)
+            new_field.props['field-id'] = id_counter
+            id_counter += 1
+
+            if isinstance(new_field.type, RecordSchema):
+                new_field.type, id_counter = add_field_ids(new_field.type, id_counter)
+            elif isinstance(new_field.type, ArraySchema):
+                new_field.type.props['element-id'] = id_counter
+                id_counter += 1
+                if isinstance(new_field.type.items, RecordSchema):
+                    new_field.type.items, id_counter = add_field_ids(new_field.type.items, id_counter)
+            elif isinstance(new_field.type, UnionSchema):
+                for i, possible_type in enumerate(new_field.type.schemas):
+                    if isinstance(possible_type, RecordSchema):
+                        new_field.type.schemas[i], id_counter = add_field_ids(possible_type, id_counter)
+                    elif isinstance(possible_type, ArraySchema):
+                         possible_type.props['element-id'] = id_counter
+                         id_counter += 1
+                         if isinstance(possible_type.items, RecordSchema):
+                            possible_type.items, id_counter = add_field_ids(possible_type.items, id_counter)
+
+            new_fields.append(new_field)
+        # Create a new RecordSchema object with the modified fields
+        modified_schema = make_avsc_object(
+            {
+                "type": "record",
+                "name": avro_schema.name,
+                "namespace": avro_schema.namespace,
+                "fields": [f.to_json() for f in new_fields],
+                **avro_schema.props
+            }
+        )
+        return modified_schema, id_counter
+    return avro_schema, id_counter
+
+# Read Avro schema from file
+with open(input_file, 'r') as f:
+    avro_schema_json = json.load(f)
+
+# Parse Avro schema
+avro_schema = schema.make_avsc_object(avro_schema_json)
+
+# Add field IDs and element IDs
+modified_avro_schema, _ = add_field_ids(avro_schema)
+
+# Write modified schema to output file
+with open(output_file, 'w') as f:
+    json.dump(json.loads(modified_avro_schema.to_json()), f, indent=2)
+
+print(f"Modified schema written to {output_file}")
